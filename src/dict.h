@@ -159,7 +159,7 @@ typedef struct dictIterator {
     //             从而防止指针丢失
     dictEntry *entry, *nextEntry;
     /* unsafe iterator fingerprint for misuse detection. */
-    //fingerprint：字典的指纹 就是hash值
+    //fingerprint：字典的指纹 就是hash值，rehash时用
     long long fingerprint;
 } dictIterator;
 
@@ -167,13 +167,18 @@ typedef void (dictScanFunction)(void *privdata, const dictEntry *de);
 typedef void (dictScanBucketFunction)(void *privdata, dictEntry **bucketref);
 
 /* This is the initial size of every hash table */
+/*
+ * 哈希表的初始大小
+ */
 #define DICT_HT_INITIAL_SIZE     4
 
 /* ------------------------------- Macros ------------------------------------*/
+// 释放给定字典节点的值
 #define dictFreeVal(d, entry) \
     if ((d)->type->valDestructor) \
         (d)->type->valDestructor((d)->privdata, (entry)->v.val)
 
+// 设置给定字典节点的值
 #define dictSetVal(d, entry, _val_) do { \
     if ((d)->type->valDup) \
         (entry)->v.val = (d)->type->valDup((d)->privdata, _val_); \
@@ -181,19 +186,24 @@ typedef void (dictScanBucketFunction)(void *privdata, dictEntry **bucketref);
         (entry)->v.val = (_val_); \
 } while(0)
 
+// 将一个有符号整数设为节点的值
 #define dictSetSignedIntegerVal(entry, _val_) \
     do { (entry)->v.s64 = _val_; } while(0)
 
+// 将一个无符号整数设为节点的值
 #define dictSetUnsignedIntegerVal(entry, _val_) \
     do { (entry)->v.u64 = _val_; } while(0)
 
+// 将一个双精度浮点数设为节点的值
 #define dictSetDoubleVal(entry, _val_) \
     do { (entry)->v.d = _val_; } while(0)
 
+// 释放给定字典节点的键
 #define dictFreeKey(d, entry) \
     if ((d)->type->keyDestructor) \
         (d)->type->keyDestructor((d)->privdata, (entry)->key)
 
+// 设置给定字典节点的键
 #define dictSetKey(d, entry, _key_) do { \
     if ((d)->type->keyDup) \
         (entry)->key = (d)->type->keyDup((d)->privdata, _key_); \
@@ -201,19 +211,29 @@ typedef void (dictScanBucketFunction)(void *privdata, dictEntry **bucketref);
         (entry)->key = (_key_); \
 } while(0)
 
+// 比对两个键
 #define dictCompareKeys(d, key1, key2) \
     (((d)->type->keyCompare) ? \
         (d)->type->keyCompare((d)->privdata, key1, key2) : \
         (key1) == (key2))
 
+// 计算给定键的哈希值
 #define dictHashKey(d, key) (d)->type->hashFunction(key)
+// 返回获取给定节点的键
 #define dictGetKey(he) ((he)->key)
+// 返回获取给定节点的值
 #define dictGetVal(he) ((he)->v.val)
+// 返回获取给定节点的有符号整数值
 #define dictGetSignedIntegerVal(he) ((he)->v.s64)
+// 返回给定节点的无符号整数值
 #define dictGetUnsignedIntegerVal(he) ((he)->v.u64)
+// 返回给定节点的双精度浮点数值
 #define dictGetDoubleVal(he) ((he)->v.d)
+// 返回给定字典的大小
 #define dictSlots(d) ((d)->ht[0].size+(d)->ht[1].size)
+// 返回字典的已有节点数量
 #define dictSize(d) ((d)->ht[0].used+(d)->ht[1].used)
+// 查看字典是否正在 rehash
 #define dictIsRehashing(d) ((d)->rehashidx != -1)
 
 /* API */
