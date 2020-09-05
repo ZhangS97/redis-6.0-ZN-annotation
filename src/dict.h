@@ -98,9 +98,9 @@ typedef struct dictType {
 
 /* This is our hash table structure. Every dictionary has two of this as we
  * implement incremental rehashing, for the old to the new table. */
- /*
-  * 哈希表
-  */
+/*
+ * 哈希表
+ */
 typedef struct dictht {
     // 哈希表数组
     dictEntry **table;
