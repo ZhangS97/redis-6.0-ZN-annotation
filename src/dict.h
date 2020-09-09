@@ -1,12 +1,3 @@
-/*
- * 这个文件实现了一个内存哈希表，
- * 它支持插入、删除、替换、查找和获取随机元素等操作。
- *
- * 哈希表会自动在表的大小的二次方之间进行调整。
- *
- * 键的冲突通过链表来解决。
- */
-
 /* Hash Tables Implementation.
  *
  * This file implements in-memory hash tables with insert/del/replace/find/
@@ -40,6 +31,16 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
+ */
+
+
+/*
+ * 这个文件实现了一个内存哈希表，
+ * 它支持插入、删除、替换、查找和获取随机元素等操作。
+ *
+ * 哈希表会自动在表的大小的二次方之间进行调整。
+ *
+ * 键的冲突通过链表来解决。
  */
 
 #include <stdint.h>
@@ -97,9 +98,9 @@ typedef struct dictType {
 
 /* This is our hash table structure. Every dictionary has two of this as we
  * implement incremental rehashing, for the old to the new table. */
- /*
-  * 哈希表
-  */
+/*
+ * 哈希表
+ */
 typedef struct dictht {
     // 哈希表数组
     dictEntry **table;
