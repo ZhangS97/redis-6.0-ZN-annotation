@@ -220,41 +220,80 @@ typedef struct clusterNode {
     list *fail_reports;         /* List of nodes signaling this as failing */
 } clusterNode;
 
+// 集群状态，每个节点都保存着一个这样的状态，记录了它们眼中的集群的样子。
+// 另外，虽然这个结构主要用于记录集群的属性，但是为了节约资源，
+// 有些与节点有关的属性，比如 slots_to_keys 、 failover_auth_count
+// 也被放到了这个结构里面。
 typedef struct clusterState {
+    // 指向当前节点的指针
     clusterNode *myself;  /* This node */
+    // 集群当前的配置纪元，用于实现故障转移
     uint64_t currentEpoch;
+    // 集群当前的状态：是在线还是下线
     int state;            /* CLUSTER_OK, CLUSTER_FAIL, ... */
+    // 集群中至少处理着一个槽的节点的数量。
     int size;             /* Num of master nodes with at least one slot */
+    // 集群节点名单（包括 myself 节点）
+    // 字典的键为节点的名字，字典的值为 clusterNode 结构
     dict *nodes;          /* Hash table of name -> clusterNode structures */
+    // 节点黑名单，用于 CLUSTER FORGET 命令
+    // 防止被 FORGET 的命令重新被添加到集群里面
     dict *nodes_black_list; /* Nodes we don't re-add for a few seconds. */
+    // 记录要从当前节点迁移到目标节点的槽，以及迁移的目标节点
+    // migrating_slots_to[i] = NULL 表示槽 i 未被迁移
+    // migrating_slots_to[i] = clusterNode_A 表示槽 i 要从本节点迁移至节点 A
     clusterNode *migrating_slots_to[CLUSTER_SLOTS];
+    // 记录要从源节点迁移到本节点的槽，以及进行迁移的源节点
+    // importing_slots_from[i] = NULL 表示槽 i 未进行导入
+    // importing_slots_from[i] = clusterNode_A 表示正从节点 A 中导入槽 i
     clusterNode *importing_slots_from[CLUSTER_SLOTS];
+    // 负责处理各个槽的节点
+    // 例如 slots[i] = clusterNode_A 表示槽 i 由节点 A 处理
     clusterNode *slots[CLUSTER_SLOTS];
+    // 记录各个槽key的总数
     uint64_t slots_keys_count[CLUSTER_SLOTS];
+    // 跳跃表，表中以槽作为分值，键作为成员，对槽进行有序排序
+    // 当需要对某些槽进行区间（range）操作时，这个跳跃表可以提供方便
+    // 具体操作定义在 db.c 里面
     rax *slots_to_keys;
     /* The following fields are used to take the slave state on elections. */
+    // 以下这些域被用于进行故障转移选举
+    // 上次执行选举或者下次执行选举的时间
     mstime_t failover_auth_time; /* Time of previous or next election. */
+    // 节点获得的投票数量
     int failover_auth_count;    /* Number of votes received so far. */
+    // 如果值为 1 ，表示本节点已经向其他节点发送了投票请求
     int failover_auth_sent;     /* True if we already asked for votes. */
     int failover_auth_rank;     /* This slave rank for current auth request. */
     uint64_t failover_auth_epoch; /* Epoch of the current election. */
     int cant_failover_reason;   /* Why a slave is currently not able to
                                    failover. See the CANT_FAILOVER_* macros. */
     /* Manual failover state in common. */
+    /* 共用的手动故障转移状态 */
+    // 手动故障转移执行的时间限制
     mstime_t mf_end;            /* Manual failover time limit (ms unixtime).
                                    It is zero if there is no MF in progress. */
     /* Manual failover state of master. */
+    /* 主服务器的手动故障转移状态 */
     clusterNode *mf_slave;      /* Slave performing the manual failover. */
     /* Manual failover state of slave. */
+    /* 从服务器的手动故障转移状态 */
     long long mf_master_offset; /* Master offset the slave needs to start MF
                                    or zero if stil not received. */
+    // 指示手动故障转移是否可以开始的标志值
+    // 值为非 0 时表示各个主服务器可以开始投票
     int mf_can_start;           /* If non-zero signal that the manual failover
                                    can start requesting masters vote. */
     /* The followign fields are used by masters to take state on elections. */
+    // 以下这些域由主服务器使用，用于记录选举时的状态
+    // 集群最后一次进行投票的纪元
     uint64_t lastVoteEpoch;     /* Epoch of the last vote granted. */
+    // 在进入下个事件循环之前要做的事情，以各个 flag 来记录
     int todo_before_sleep; /* Things to do in clusterBeforeSleep(). */
     /* Messages received and sent by type. */
+    // 通过 cluster 连接发送的消息数量
     long long stats_bus_messages_sent[CLUSTERMSG_TYPE_COUNT];
+    // 通过 cluster 接收到的消息数量
     long long stats_bus_messages_received[CLUSTERMSG_TYPE_COUNT];
     long long stats_pfail_nodes;    /* Number of nodes in PFAIL status,
                                        excluding nodes without address. */
