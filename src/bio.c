@@ -1,10 +1,19 @@
 /* Background I/O service for Redis.
  *
+ * 后台 I/O 服务
+ *
  * This file implements operations that we need to perform in the background.
  * Currently there is only a single operation, that is a background close(2)
  * system call. This is needed as when the process is the last owner of a
  * reference to a file closing it means unlinking it, and the deletion of the
  * file is slow, blocking the server.
+ *
+ * bio 实现了将工作放在后台执行的功能。
+ * 目前在后台执行的只有 close(2) 操作：
+ * 因为当服务器是某个文件的最后一个拥有者时，
+ * 关闭一个文件代表 unlinking 它，
+ * 并且删除文件非常慢，会阻塞系统，
+ * 所以我们将 close(2) 放到后台进行。
  *
  * In the future we'll either continue implementing new things we need or
  * we'll switch to libeio. However there are probably long term uses for this
