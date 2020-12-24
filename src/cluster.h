@@ -12,7 +12,7 @@
 #define CLUSTER_FAIL 1        /* The cluster can't work */
 // 节点名字的长度
 #define CLUSTER_NAMELEN 40    /* sha1 hex length */
-// 集群的实际端口号 = 用户指定的端口号 + REDIS_CLUSTER_PORT_INCR
+// 集群的实际端口号 = 用户指定的端口号 + CLUSTER_PORT_INCR
 #define CLUSTER_PORT_INCR 10000 /* Cluster port = baseport + PORT_INCR */
 
 /* The following defines are amount of time, sometimes expressed as
@@ -105,7 +105,9 @@ typedef struct clusterLink {
 #define nodeFailed(n) ((n)->flags & CLUSTER_NODE_FAIL)
 #define nodeCantFailover(n) ((n)->flags & CLUSTER_NODE_NOFAILOVER)
 
-/* Reasons why a slave is not able to failover. */
+/* Reasons why a slave is not able to failover.
+ * 从节点 无法使用失效转移备份 的原因
+ * */
 #define CLUSTER_CANT_FAILOVER_NONE 0
 #define CLUSTER_CANT_FAILOVER_DATA_AGE 1
 #define CLUSTER_CANT_FAILOVER_WAITING_DELAY 2
@@ -113,18 +115,23 @@ typedef struct clusterLink {
 #define CLUSTER_CANT_FAILOVER_WAITING_VOTES 4
 #define CLUSTER_CANT_FAILOVER_RELOG_PERIOD (60*5) /* seconds. */
 
-/* clusterState todo_before_sleep flags. */
+/* clusterState todo_before_sleep flags.
+ * 集群休眠前要做的事 的状态值
+ * */
 #define CLUSTER_TODO_HANDLE_FAILOVER (1<<0)
 #define CLUSTER_TODO_UPDATE_STATE (1<<1)
 #define CLUSTER_TODO_SAVE_CONFIG (1<<2)
 #define CLUSTER_TODO_FSYNC_CONFIG (1<<3)
 
 /* Message types.
- *
+ * 消息类型
  * Note that the PING, PONG and MEET messages are actually the same exact
  * kind of packet. PONG is the reply to ping, in the exact format as a PING,
  * while MEET is a special PING that forces the receiver to add the sender
- * as a node (if it is not already in the list). */
+ * as a node (if it is not already in the list).
+ *
+ *
+ * */
 #define CLUSTERMSG_TYPE_PING 0          /* Ping */
 #define CLUSTERMSG_TYPE_PONG 1          /* Pong (reply to Ping) */
 #define CLUSTERMSG_TYPE_MEET 2          /* Meet "let's join" message */
@@ -139,7 +146,11 @@ typedef struct clusterLink {
 
 /* Flags that a module can set in order to prevent certain Redis Cluster
  * features to be enabled. Useful when implementing a different distributed
- * system on top of Redis Cluster message bus, using modules. */
+ * system on top of Redis Cluster message bus, using modules.
+ * 这个flag是为了阻止特定的redis集群功能启用
+ *
+ * 在基于redis集群的分布式系统上使用这个模块很有用
+ * */
 #define CLUSTER_MODULE_FLAG_NONE 0
 #define CLUSTER_MODULE_FLAG_NO_FAILOVER (1<<1)
 #define CLUSTER_MODULE_FLAG_NO_REDIRECTION (1<<2)
