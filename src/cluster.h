@@ -408,29 +408,48 @@ union clusterMsgData {
 };
 
 #define CLUSTER_PROTO_VER 1 /* Cluster bus protocol version. */
-
+// 用来表示集群消息的结构（消息头，header）
 typedef struct {
     char sig[4];        /* Signature "RCmb" (Redis Cluster message bus). */
+    // 消息的长度（包括这个消息头的长度和消息正文的长度）
     uint32_t totlen;    /* Total length of this message */
     uint16_t ver;       /* Protocol version, currently set to 1. */
     uint16_t port;      /* TCP base port number. */
+    // 消息的类型
     uint16_t type;      /* Message type */
+    // 消息正文包含的节点信息数量
+    // 只在发送 MEET 、 PING 和 PONG 这三种 Gossip 协议消息时使用
     uint16_t count;     /* Only used for some kind of messages. */
+    // 消息发送者的配置纪元
     uint64_t currentEpoch;  /* The epoch accordingly to the sending node. */
+    // 如果消息发送者是一个主节点，那么这里记录的是消息发送者的配置纪元
+    // 如果消息发送者是一个从节点，那么这里记录的是消息发送者正在复制的主节点的配置纪元
     uint64_t configEpoch;   /* The config epoch if it's a master, or the last
                                epoch advertised by its master if it is a
                                slave. */
+    // 节点的复制偏移量
     uint64_t offset;    /* Master replication offset if node is a master or
                            processed replication offset if node is a slave. */
+    // 消息发送者的名字（ID）
     char sender[CLUSTER_NAMELEN]; /* Name of the sender node */
+    // 消息发送者目前的槽指派信息
     unsigned char myslots[CLUSTER_SLOTS/8];
+    // 如果消息发送者是一个从节点，那么这里记录的是消息发送者正在复制的主节点的名字
+    // 如果消息发送者是一个主节点，那么这里记录的是 REDIS_NODE_NULL_NAME
+    // （一个 40 字节长，值全为 0 的字节数组）
     char slaveof[CLUSTER_NAMELEN];
     char myip[NET_IP_STR_LEN];    /* Sender IP, if not all zeroed. */
+    // 为未来保留
     char notused1[34];  /* 34 bytes reserved for future usage. */
+    // 消息发送者的端口号
     uint16_t cport;      /* Sender TCP cluster bus port */
+    // 消息发送者的标识值
     uint16_t flags;      /* Sender node flags */
+    // 消息发送者所处集群的状态
     unsigned char state; /* Cluster state from the POV of the sender */
+    // 消息标志
     unsigned char mflags[3]; /* Message flags: CLUSTERMSG_FLAG[012]_... */
+    // 消息的正文（或者说，内容）
     union clusterMsgData data;
 } clusterMsg;
 
