@@ -310,45 +310,75 @@ typedef struct clusterState {
                                        excluding nodes without address. */
 } clusterState;
 
-/* Redis cluster messages header */
+/* Redis cluster messages header
+ *
+ * redis集群 消息头
+ * */
 
 /* Initially we don't know our "name", but we'll find it once we connect
  * to the first node, using the getsockname() function. Then we'll use this
- * address for all the next messages. */
+ * address for all the next messages.
+ *
+ * 一开始我们并不知道名字，当首次连接并使用getsockname函数后会发现名字
+ * 然后接下来的消息都会用这个地址
+ * */
 typedef struct {
+    // 节点的名字
+    // 在刚开始的时候，节点的名字会是随机的
+    // 当 MEET 信息发送并得到回复之后，集群就会为节点设置正式的名字
     char nodename[CLUSTER_NAMELEN];
+    // 最后一次向该节点发送 PING 消息的时间戳
     uint32_t ping_sent;
+    // 最后一次从该节点接收到 PONG 消息的时间戳
     uint32_t pong_received;
+    // 节点的 IP 地址
     char ip[NET_IP_STR_LEN];  /* IP address last time it was seen */
+    // 节点的端口号
     uint16_t port;              /* base port last time it was seen */
+    // 集群的端口号
     uint16_t cport;             /* cluster port last time it was seen */
+    // 节点的标识值
     uint16_t flags;             /* node->flags copy */
+    // 对齐字节，不使用
     uint32_t notused1;
 } clusterMsgDataGossip;
 
 typedef struct {
+    // 下线节点的名字
     char nodename[CLUSTER_NAMELEN];
 } clusterMsgDataFail;
 
 typedef struct {
+    // 频道名长度
     uint32_t channel_len;
+    // 消息长度
     uint32_t message_len;
+    // 消息内容，格式为 频道名+消息
+    // bulk_data[0:channel_len-1] 为频道名
+    // bulk_data[channel_len:channel_len+message_len-1] 为消息
     unsigned char bulk_data[8]; /* 8 bytes just as placeholder. */
 } clusterMsgDataPublish;
 
 typedef struct {
+    // 消息发送者的配置纪元
     uint64_t configEpoch; /* Config epoch of the specified instance. */
+    //
     char nodename[CLUSTER_NAMELEN]; /* Name of the slots owner. */
     unsigned char slots[CLUSTER_SLOTS/8]; /* Slots bitmap. */
 } clusterMsgDataUpdate;
 
 typedef struct {
+    // 发送者的id
     uint64_t module_id;     /* ID of the sender module. */
+    // 消息的长度
     uint32_t len;           /* ID of the sender module. */
+    // 消息的类型
     uint8_t type;           /* Type from 0 to 255. */
+
     unsigned char bulk_data[3]; /* 3 bytes just as placeholder. */
 } clusterMsgModule;
 
+// 消息的正文
 union clusterMsgData {
     /* PING, MEET and PONG */
     struct {
