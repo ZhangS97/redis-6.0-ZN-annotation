@@ -43,7 +43,10 @@
 
 /* A global reference to myself is handy to make code more clear.
  * Myself always points to server.cluster->myself, that is, the clusterNode
- * that represents this node. */
+ * that represents this node.
+ *
+ * 为了方便起见，维持一个 myself 全局变量，让它总是指向 cluster->myself
+ * */
 clusterNode *myself = NULL;
 
 clusterNode *createClusterNode(char *nodename, int flags);
@@ -82,7 +85,9 @@ void moduleCallClusterReceivers(const char *sender_id, uint64_t module_id, uint8
  * -------------------------------------------------------------------------- */
 
 /* Load the cluster config from 'filename'.
- *
+ * 读取集群配置文件
+ * 如果文件不存在或者文件为空返回 C_ERR
+ * 读取成功返回 C_OK
  * If the file does not exist or is zero-length (this may happen because
  * when we lock the nodes.conf file, we create a zero-length one for the
  * sake of locking if it does not already exist), C_ERR is returned.
@@ -113,11 +118,16 @@ int clusterLoadConfig(char *filename) {
 
     /* Parse the file. Note that single lines of the cluster config file can
      * be really long as they include all the hash slots of the node.
+     * 集群配置文件中的行可能会非常长，
+     * 因为它会在行里面记录所有哈希槽的节点。
      * This means in the worst possible case, half of the Redis slots will be
      * present in a single line, possibly in importing or migrating state, so
      * together with the node ID of the sender/receiver.
-     *
-     * To simplify we allocate 1024+CLUSTER_SLOTS*128 bytes per line. */
+     * 在最坏情况下，一个行可能保存了半数的哈希槽数据，
+     * 并且可能带有导入或导出状态，以及发送者和接受者的 ID 。
+     * To simplify we allocate 1024+CLUSTER_SLOTS*128 bytes per line.
+     * 为了简单起见，我们为每行分配 1024+CLUSTER_SLOTS*128 字节的空间
+     * */
     maxline = 1024+CLUSTER_SLOTS*128;
     line = zmalloc(maxline);
     while(fgets(line,maxline,fp) != NULL) {
@@ -162,13 +172,17 @@ int clusterLoadConfig(char *filename) {
             goto fmterr;
         }
 
-        /* Create this node if it does not exist */
+        /* Create this node if it does not exist
+         * 检查节点是否已经存在
+         * */
         n = clusterLookupNode(argv[0]);
         if (!n) {
             n = createClusterNode(argv[0],0);
             clusterAddNode(n);
         }
-        /* Address and port */
+        /* Address and port
+         * 设置节点的 ip 和 port
+         * */
         if ((p = strrchr(argv[1],':')) == NULL) {
             sdsfreesplitres(argv,argc);
             goto fmterr;
@@ -184,10 +198,15 @@ int clusterLoadConfig(char *filename) {
         n->port = atoi(port);
         /* In older versions of nodes.conf the "@busport" part is missing.
          * In this case we set it to the default offset of 10000 from the
-         * base port. */
+         * base port.
+         * 在老版本中，busport部分是缺失的
+         * 考虑到这种情况，我们设置了距离基本端口默认为10000的偏移端口
+         * */
         n->cport = busp ? atoi(busp) : n->port + CLUSTER_PORT_INCR;
 
-        /* Parse flags */
+        /* Parse flags
+         * 分析节点的 flag
+         * */
         p = s = argv[2];
         while(p) {
             p = strchr(s,',');
