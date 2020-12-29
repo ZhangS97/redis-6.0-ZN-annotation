@@ -31,15 +31,24 @@
 
 /* ================================ MULTI/EXEC ============================== */
 
-/* Client state initialization for MULTI/EXEC */
+/* Client state initialization for MULTI/EXEC
+ *
+ * 初始化客户端的事务状态
+ * */
 void initClientMultiState(client *c) {
+    // 命令队列
     c->mstate.commands = NULL;
+    // 命令计数
     c->mstate.count = 0;
+    // 命令标志
     c->mstate.cmd_flags = 0;
+    // 命令标志
     c->mstate.cmd_inv_flags = 0;
 }
 
-/* Release all the resources associated with MULTI/EXEC state */
+/* Release all the resources associated with MULTI/EXEC state
+ * 释放所有事务状态相关的资源
+ * */
 void freeClientMultiState(client *c) {
     int j;
 
@@ -54,7 +63,9 @@ void freeClientMultiState(client *c) {
     zfree(c->mstate.commands);
 }
 
-/* Add a new command into the MULTI commands queue */
+/* Add a new command into the MULTI commands queue
+ * 将一个新命令添加到事务队列中
+ * */
 void queueMultiCommand(client *c) {
     multiCmd *mc;
     int j;
@@ -62,48 +73,66 @@ void queueMultiCommand(client *c) {
     /* No sense to waste memory if the transaction is already aborted.
      * this is useful in case client sends these in a pipeline, or doesn't
      * bother to read previous responses and didn't notice the multi was already
-     * aborted. */
+     * aborted.
+     * 避免为已中止的事务浪费内存
+     * */
     if (c->flags & CLIENT_DIRTY_EXEC)
         return;
-
+    // 为新数组元素分配空间
     c->mstate.commands = zrealloc(c->mstate.commands,
             sizeof(multiCmd)*(c->mstate.count+1));
+    // 指向新元素
     mc = c->mstate.commands+c->mstate.count;
+    // 设置事务的命令、命令参数数量，以及命令的参数
     mc->cmd = c->cmd;
     mc->argc = c->argc;
     mc->argv = zmalloc(sizeof(robj*)*c->argc);
     memcpy(mc->argv,c->argv,sizeof(robj*)*c->argc);
     for (j = 0; j < c->argc; j++)
         incrRefCount(mc->argv[j]);
+    // 事务命令数量计数器增一
     c->mstate.count++;
     c->mstate.cmd_flags |= c->cmd->flags;
     c->mstate.cmd_inv_flags |= ~c->cmd->flags;
 }
 
+/**
+ * 取消事务
+ * @param c
+ */
 void discardTransaction(client *c) {
+    // 重置事务状态
     freeClientMultiState(c);
     initClientMultiState(c);
+    // 屏蔽事务状态
     c->flags &= ~(CLIENT_MULTI|CLIENT_DIRTY_CAS|CLIENT_DIRTY_EXEC);
+    // 取消对所有键的监视
     unwatchAllKeys(c);
 }
 
 /* Flag the transacation as DIRTY_EXEC so that EXEC will fail.
- * Should be called every time there is an error while queueing a command. */
+ * 将事务状态设为 DIRTY_EXEC ，让之后的 EXEC 命令失败。
+ * Should be called every time there is an error while queueing a command.
+ * 每次在入队命令出错时调用
+ * */
 void flagTransaction(client *c) {
     if (c->flags & CLIENT_MULTI)
         c->flags |= CLIENT_DIRTY_EXEC;
 }
 
 void multiCommand(client *c) {
+    // 不能在事务中嵌套事务
     if (c->flags & CLIENT_MULTI) {
         addReplyError(c,"MULTI calls can not be nested");
         return;
     }
+    // 打开事务 FLAG
     c->flags |= CLIENT_MULTI;
     addReply(c,shared.ok);
 }
 
 void discardCommand(client *c) {
+    // 不能在客户端未进行事务状态之前使用
     if (!(c->flags & CLIENT_MULTI)) {
         addReplyError(c,"DISCARD without MULTI");
         return;
@@ -113,12 +142,16 @@ void discardCommand(client *c) {
 }
 
 /* Send a MULTI command to all the slaves and AOF file. Check the execCommand
- * implementation for more information. */
+ * implementation for more information.
+ * 向所有附属节点和 AOF 文件传播 MULTI 命令。
+ */
 void execCommandPropagateMulti(client *c) {
     propagate(server.multiCommand,c->db->id,&shared.multi,1,
               PROPAGATE_AOF|PROPAGATE_REPL);
 }
-
+/*
+ * 向所有附属节点和 AOF 文件传播 Exec 命令。
+ */
 void execCommandPropagateExec(client *c) {
     propagate(server.execCommand,c->db->id,&shared.exec,1,
               PROPAGATE_AOF|PROPAGATE_REPL);
