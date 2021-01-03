@@ -161,7 +161,9 @@ void execCommandPropagateExec(client *c) {
  * The transaction is always aboarted with -EXECABORT so that the client knows
  * the server exited the multi state, but the actual reason for the abort is
  * included too.
- * Note: 'error' may or may not end with \r\n. see addReplyErrorFormat. */
+ * Note: 'error' may or may not end with \r\n. see addReplyErrorFormat.
+ * 放弃一个事务
+ * */
 void execCommandAbort(client *c, sds error) {
     discardTransaction(c);
 
@@ -197,17 +199,25 @@ void execCommand(client *c) {
     if (c->flags & (CLIENT_DIRTY_CAS|CLIENT_DIRTY_EXEC)) {
         addReply(c, c->flags & CLIENT_DIRTY_EXEC ? shared.execaborterr :
                                                    shared.nullarray[c->resp]);
+        // 取消事务
         discardTransaction(c);
         goto handle_monitor;
     }
 
     /* Exec all the queued commands */
+    // 已经可以保证安全性了，取消客户端对所有键的监视
     unwatchAllKeys(c); /* Unwatch ASAP otherwise we'll waste CPU cycles */
+
+    // 因为事务中的命令在执行时可能会修改命令和命令的参数
+    // 所以为了正确地传播命令，需要现备份这些命令和参数
     orig_argv = c->argv;
     orig_argc = c->argc;
     orig_cmd = c->cmd;
     addReplyArrayLen(c,c->mstate.count);
+    // 执行事务中的命令
     for (j = 0; j < c->mstate.count; j++) {
+        // 因为 Redis 的命令必须在客户端的上下文中执行
+        // 所以要将事务队列中的命令、命令参数等设置给客户端
         c->argc = c->mstate.commands[j].argc;
         c->argv = c->mstate.commands[j].argv;
         c->cmd = c->mstate.commands[j].cmd;
@@ -216,7 +226,10 @@ void execCommand(client *c) {
          * is not readonly nor an administrative one.
          * This way we'll deliver the MULTI/..../EXEC block as a whole and
          * both the AOF and the replication link will have the same consistency
-         * and atomicity guarantees. */
+         * and atomicity guarantees.
+         * 当遇上第一个写命令时，传播 MULTI 命令。
+         * 这可以确保服务器和 AOF 文件以及附属节点的数据一致性。
+         * */
         if (!must_propagate &&
             !server.loading &&
             !(c->cmd->flags & (CMD_READONLY|CMD_ADMIN)))
@@ -238,21 +251,29 @@ void execCommand(client *c) {
                 "no permission to execute the command or subcommand" :
                 "no permission to touch the specified keys");
         } else {
+            // 执行命令
             call(c,server.loading ? CMD_CALL_NONE : CMD_CALL_FULL);
         }
 
         /* Commands may alter argc/argv, restore mstate. */
+        // 因为执行后命令、命令参数可能会被改变
+        // 比如 SPOP 会被改写为 SREM
+        // 所以这里需要更新事务队列中的命令和参数
+        // 确保附属节点和 AOF 的数据一致性
         c->mstate.commands[j].argc = c->argc;
         c->mstate.commands[j].argv = c->argv;
         c->mstate.commands[j].cmd = c->cmd;
     }
+    // 还原命令、命令参数
     c->argv = orig_argv;
     c->argc = orig_argc;
     c->cmd = orig_cmd;
+    // 清理事务状态
     discardTransaction(c);
 
     /* Make sure the EXEC command will be propagated as well if MULTI
      * was already propagated. */
+    // 将服务器设为脏，确保 EXEC 命令也会被传播
     if (must_propagate) {
         int is_master = server.masterhost == NULL;
         server.dirty++;
@@ -283,18 +304,35 @@ handle_monitor:
  * WATCHing those keys, so that given a key that is going to be modified
  * we can mark all the associated clients as dirty.
  *
+ * 这个实现为每个数据库都设置了一个将 key 映射为 list 的字典，
+ * list 中保存的是所有监视这个 key 的客户端，
+ * 这样就可以在这个 key 被修改的时候，
+ * 方便地对所有监视这个 key 的客户端进行处理。
+ *
  * Also every client contains a list of WATCHed keys so that's possible to
- * un-watch such keys when the client is freed or when UNWATCH is called. */
+ * un-watch such keys when the client is freed or when UNWATCH is called.
+ *
+ * 另外，每个客户端都会保存一个带有所有被监视键的列表，
+ * 这样就可以方便地对所有被监视键进行 UNWATCH 。
+ * */
 
 /* In the client->watched_keys list we need to use watchedKey structures
  * as in order to identify a key in Redis we need both the key name and the
- * DB */
+ * DB
+ * 在监视一个键时，
+ * 我们既需要保存被监视的键，
+ * 还需要保存该键所在的数据库。
+ * */
 typedef struct watchedKey {
+    // 被监视的键
     robj *key;
+    // 键所在的数据库
     redisDb *db;
 } watchedKey;
 
-/* Watch for the specified key */
+/* Watch for the specified key
+ * 让客户端 c 监视给定的键 key
+ * */
 void watchForKey(client *c, robj *key) {
     list *clients = NULL;
     listIter li;
@@ -302,6 +340,8 @@ void watchForKey(client *c, robj *key) {
     watchedKey *wk;
 
     /* Check if we are already watching for this key */
+    // 检查 key 是否已经保存在 watched_keys 链表中，
+    // 如果是的话，直接返回
     listRewind(c->watched_keys,&li);
     while((ln = listNext(&li))) {
         wk = listNodeValue(ln);
@@ -309,12 +349,17 @@ void watchForKey(client *c, robj *key) {
             return; /* Key already watched */
     }
     /* This key is not already watched in this DB. Let's add it */
+    // 检查 key 是否存在于数据库的 watched_keys 字典中
     clients = dictFetchValue(c->db->watched_keys,key);
+    // 如果不存在的话，添加它
     if (!clients) {
+        // 值为链表
         clients = listCreate();
+        // 关联键值对到字典
         dictAdd(c->db->watched_keys,key,clients);
         incrRefCount(key);
     }
+    // 将客户端添加到链表的末尾
     listAddNodeTail(clients,c);
     /* Add the new key to the list of keys watched by this client */
     wk = zmalloc(sizeof(*wk));
@@ -325,12 +370,19 @@ void watchForKey(client *c, robj *key) {
 }
 
 /* Unwatch all the keys watched by this client. To clean the EXEC dirty
- * flag is up to the caller. */
+ * flag is up to the caller.
+ *
+ * 取消客户端对所有键的监视。
+ *
+ * 清除客户端事务状态的任务由调用者执行。
+ * */
 void unwatchAllKeys(client *c) {
     listIter li;
     listNode *ln;
 
+    // 没有键被监视，直接返回
     if (listLength(c->watched_keys) == 0) return;
+    // 遍历链表中所有被客户端监视的键
     listRewind(c->watched_keys,&li);
     while((ln = listNext(&li))) {
         list *clients;
@@ -338,14 +390,20 @@ void unwatchAllKeys(client *c) {
 
         /* Lookup the watched key -> clients list and remove the client
          * from the list */
+        // 从数据库的 watched_keys 字典的 key 键中
+        // 删除链表里包含的客户端节点
         wk = listNodeValue(ln);
+        // 取出客户端链表
         clients = dictFetchValue(wk->db->watched_keys, wk->key);
         serverAssertWithInfo(c,NULL,clients != NULL);
+        // 删除链表中的客户端节点
         listDelNode(clients,listSearchKey(clients,c));
         /* Kill the entry at all if this was the only client */
+        // 如果链表已经被清空，那么删除这个键
         if (listLength(clients) == 0)
             dictDelete(wk->db->watched_keys, wk->key);
         /* Remove this watched key from the client->watched list */
+        // 从链表中移除 key 节点
         listDelNode(c->watched_keys,ln);
         decrRefCount(wk->key);
         zfree(wk);
@@ -353,18 +411,24 @@ void unwatchAllKeys(client *c) {
 }
 
 /* "Touch" a key, so that if this key is being WATCHed by some client the
- * next EXEC will fail. */
+ * next EXEC will fail.
+ * “触碰”一个键，如果这个键正在被某个/某些客户端监视着，
+ * 那么这个/这些客户端在执行 EXEC 时事务将失败。
+ * */
 void touchWatchedKey(redisDb *db, robj *key) {
     list *clients;
     listIter li;
     listNode *ln;
 
+    // 字典为空，没有任何键被监视
     if (dictSize(db->watched_keys) == 0) return;
+    // 获取所有监视这个键的客户端
     clients = dictFetchValue(db->watched_keys, key);
     if (!clients) return;
 
     /* Mark all the clients watching this key as CLIENT_DIRTY_CAS */
     /* Check if we are already watching for this key */
+    // 遍历所有客户端，打开他们的 CLIENT_DIRTY_CAS 标识
     listRewind(clients,&li);
     while((ln = listNext(&li))) {
         client *c = listNodeValue(ln);
@@ -376,22 +440,35 @@ void touchWatchedKey(redisDb *db, robj *key) {
 /* On FLUSHDB or FLUSHALL all the watched keys that are present before the
  * flush but will be deleted as effect of the flushing operation should
  * be touched. "dbid" is the DB that's getting the flush. -1 if it is
- * a FLUSHALL operation (all the DBs flushed). */
+ * a FLUSHALL operation (all the DBs flushed).
+ * 当一个数据库被 FLUSHDB 或者 FLUSHALL 清空时，
+ * 它数据库内的所有 key 都应该被触碰。
+ *
+ * dbid 参数指定要被 FLUSH 的数据库。
+ *
+ * 如果 dbid 为 -1 ，那么表示执行的是 FLUSHALL ，
+ * 所有数据库都将被 FLUSH
+ * */
 void touchWatchedKeysOnFlush(int dbid) {
     listIter li1, li2;
     listNode *ln;
 
     /* For every client, check all the waited keys */
+    // 遍历所有客户端
     listRewind(server.clients,&li1);
     while((ln = listNext(&li1))) {
         client *c = listNodeValue(ln);
+        // 遍历客户端监视的键
         listRewind(c->watched_keys,&li2);
         while((ln = listNext(&li2))) {
+            // 取出监视的键和键的数据库
             watchedKey *wk = listNodeValue(ln);
 
             /* For every watched key matching the specified DB, if the
              * key exists, mark the client as dirty, as the key will be
              * removed. */
+            // 如果数据库号码相同，或者执行的命令为 FLUSHALL
+            // 那么将客户端设置为 CLIENT_DIRTY_CAS
             if (dbid == -1 || wk->db->id == dbid) {
                 if (dictFind(wk->db->dict, wk->key->ptr) != NULL)
                     c->flags |= CLIENT_DIRTY_CAS;
@@ -403,17 +480,21 @@ void touchWatchedKeysOnFlush(int dbid) {
 void watchCommand(client *c) {
     int j;
 
+    // 不能在事务开始后执行
     if (c->flags & CLIENT_MULTI) {
         addReplyError(c,"WATCH inside MULTI is not allowed");
         return;
     }
+    // 监视输入的任意个键
     for (j = 1; j < c->argc; j++)
         watchForKey(c,c->argv[j]);
     addReply(c,shared.ok);
 }
 
 void unwatchCommand(client *c) {
+    // 取消客户端对所有键的监视
     unwatchAllKeys(c);
+    // 重置状态
     c->flags &= (~CLIENT_DIRTY_CAS);
     addReply(c,shared.ok);
 }
